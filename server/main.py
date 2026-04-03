@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 import os
 import re
@@ -11,12 +12,86 @@ from fastapi.staticfiles import StaticFiles
 
 CEST = timezone(timedelta(hours=2))
 logger = logging.getLogger("garden-camera")
+logging.basicConfig(level=logging.INFO)
 
 IMAGES_DIR = Path(os.getenv("IMAGES_DIR", "/data/images"))
 IMAGES_DIR.mkdir(parents=True, exist_ok=True)
 
+DETECTION_THRESHOLD = float(os.getenv("DETECTION_THRESHOLD", "0.5"))
+CANDIDATE_LABELS = [
+    "a photo of a grey heron standing in a garden",
+    "a photo of a garden with no birds",
+    "a photo of a garden with plants and flowers",
+]
+
+clip_model = None
+clip_processor = None
+
 app = FastAPI()
 app.mount("/static", StaticFiles(directory="static"), name="static")
+
+
+def load_model():
+    global clip_model, clip_processor
+    from transformers import CLIPModel, CLIPProcessor
+    logger.info("CLIP-Modell wird geladen...")
+    clip_model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32")
+    clip_processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
+    logger.info("CLIP-Modell geladen")
+
+
+def detect_heron(image_path: Path) -> dict:
+    import torch
+    from PIL import Image
+
+    image = Image.open(image_path).convert("RGB")
+    inputs = clip_processor(text=CANDIDATE_LABELS, images=image, return_tensors="pt", padding=True)
+
+    with torch.no_grad():
+        outputs = clip_model(**inputs)
+
+    logits = outputs.logits_per_image[0]
+    probs = logits.softmax(dim=0).tolist()
+
+    heron_score = probs[0]
+    result = {
+        "heron_detected": heron_score >= DETECTION_THRESHOLD,
+        "heron_score": round(heron_score, 3),
+        "analyzed_at": datetime.now(CEST).isoformat(),
+    }
+
+    sidecar = image_path.with_suffix(".json")
+    sidecar.write_text(json.dumps(result))
+    return result
+
+
+async def detection_task():
+    loop = asyncio.get_event_loop()
+    while True:
+        await asyncio.sleep(10)
+        if clip_model is None:
+            continue
+        jpg_files = sorted(IMAGES_DIR.glob("*.jpg"))
+        for jpg in jpg_files:
+            sidecar = jpg.with_suffix(".json")
+            if sidecar.exists():
+                continue
+            try:
+                result = await loop.run_in_executor(None, detect_heron, jpg)
+                status = "Fischreiher erkannt!" if result["heron_detected"] else "kein Fischreiher"
+                logger.info("Analyse %s: %s (Score: %.3f)", jpg.name, status, result["heron_score"])
+            except Exception:
+                logger.exception("Fehler bei Analyse von %s", jpg.name)
+
+
+def read_sidecar(jpg_path: Path) -> dict | None:
+    sidecar = jpg_path.with_suffix(".json")
+    if not sidecar.exists():
+        return None
+    try:
+        return json.loads(sidecar.read_text())
+    except Exception:
+        return None
 
 
 @app.post("/upload")
@@ -44,11 +119,36 @@ async def upload_image(request: Request):
 async def list_images(limit: int = 0, hour: str = ""):
     files = sorted(IMAGES_DIR.glob("*.jpg"), reverse=True)
     if hour:
-        # hour format: "2026-04-03_14"
         files = [f for f in files if f.name.startswith(hour)]
     if limit > 0:
         files = files[:limit]
-    return [{"filename": f.name, "size": f.stat().st_size} for f in files]
+    result = []
+    for f in files:
+        entry = {"filename": f.name, "size": f.stat().st_size}
+        detection = read_sidecar(f)
+        if detection:
+            entry["heron_detected"] = detection["heron_detected"]
+            entry["heron_score"] = detection["heron_score"]
+        else:
+            entry["heron_detected"] = None
+            entry["heron_score"] = None
+        result.append(entry)
+    return result
+
+
+@app.get("/detections")
+async def list_detections():
+    results = []
+    for f in sorted(IMAGES_DIR.glob("*.jpg"), reverse=True):
+        detection = read_sidecar(f)
+        if detection and detection.get("heron_detected"):
+            results.append({
+                "filename": f.name,
+                "size": f.stat().st_size,
+                "heron_score": detection["heron_score"],
+                "analyzed_at": detection.get("analyzed_at"),
+            })
+    return results
 
 
 @app.get("/hours")
@@ -56,7 +156,6 @@ async def list_hours():
     files = sorted(IMAGES_DIR.glob("*.jpg"), reverse=True)
     hours: dict[str, int] = {}
     for f in files:
-        # filename: 2026-04-03_14-30-00.jpg -> hour key: 2026-04-03_14
         key = f.name[:13]
         hours[key] = hours.get(key, 0) + 1
     return [{"hour": k, "count": v} for k, v in hours.items()]
@@ -82,10 +181,15 @@ async def stunde():
     return FileResponse("static/stunde.html")
 
 
+@app.get("/fischreiher.html")
+async def fischreiher():
+    return FileResponse("static/fischreiher.html")
+
+
 def cleanup_old_images():
     cutoff = datetime.now(CEST) - timedelta(days=2)
     deleted = 0
-    for f in IMAGES_DIR.glob("*.jpg"):
+    for f in list(IMAGES_DIR.glob("*.jpg")) + list(IMAGES_DIR.glob("*.json")):
         match = re.match(r"(\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})", f.name)
         if not match:
             continue
@@ -93,7 +197,7 @@ def cleanup_old_images():
         if ts < cutoff:
             f.unlink()
             deleted += 1
-    logger.info("Cleanup: %d alte Bilder gelöscht", deleted)
+    logger.info("Cleanup: %d alte Dateien gelöscht", deleted)
 
 
 async def cleanup_task():
@@ -106,3 +210,5 @@ async def cleanup_task():
 async def startup():
     cleanup_old_images()
     asyncio.create_task(cleanup_task())
+    load_model()
+    asyncio.create_task(detection_task())

@@ -4,21 +4,21 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <base href="/garden-camera/">
-    <title>Gartenkamera</title>
+    <title>Fischreiher-Sichtungen</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #1a1a2e; color: #e0e0e0; }
         header { background: #16213e; padding: 1rem 2rem; border-bottom: 2px solid #0f3460; display: flex; justify-content: space-between; align-items: center; }
         header h1 { font-size: 1.4rem; font-weight: 600; }
-        #subtitle { font-size: 0.9rem; color: #aaa; }
+        #count { font-size: 0.9rem; color: #aaa; }
         #back-link { background: rgba(255,255,255,0.15); color: #fff; border: 1px solid rgba(255,255,255,0.3); border-radius: 6px; padding: 0.5rem 1rem; font-size: 0.9rem; text-decoration: none; }
         #back-link:hover { background: rgba(255,255,255,0.3); }
         #gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 1rem; padding: 1.5rem; }
         .card { background: #16213e; border-radius: 8px; overflow: hidden; border: 1px solid #0f3460; transition: transform 0.15s; position: relative; }
-        .heron-badge { position: absolute; top: 8px; right: 8px; background: #e74c3c; color: #fff; padding: 2px 8px; border-radius: 12px; font-size: 0.75rem; font-weight: 600; z-index: 1; }
         .card:hover { transform: scale(1.02); }
         .card img { width: 100%; aspect-ratio: 4/3; object-fit: cover; display: block; cursor: pointer; }
         .card .info { padding: 0.6rem 0.8rem; font-size: 0.85rem; color: #aaa; display: flex; justify-content: space-between; }
+        .score { color: #e74c3c; font-weight: 600; }
         #overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #1a1a2e; z-index: 100; flex-direction: column; }
         #overlay.active { display: flex; }
         #overlay-header { background: #16213e; padding: 1rem 2rem; border-bottom: 2px solid #0f3460; display: flex; justify-content: space-between; align-items: center; }
@@ -33,14 +33,14 @@
 </head>
 <body>
     <header>
-        <h1>Gartenkamera</h1>
-        <span id="subtitle"></span>
+        <h1>Fischreiher-Sichtungen</h1>
+        <span id="count"></span>
         <a id="back-link" href="./">Zurück zur Übersicht</a>
     </header>
     <div id="gallery"></div>
     <div id="overlay">
         <div id="overlay-header">
-            <h1>Gartenkamera</h1>
+            <h1>Fischreiher-Sichtungen</h1>
             <span id="overlay-timestamp"></span>
             <button id="overlay-back-btn" onclick="document.getElementById('overlay').classList.remove('active')">Zurück &#8594;</button>
         </div>
@@ -50,9 +50,7 @@
     </div>
     <script>
         const gallery = document.getElementById('gallery');
-        const subtitleEl = document.getElementById('subtitle');
-        const params = new URLSearchParams(window.location.search);
-        const hour = params.get('hour') || '';
+        const countEl = document.getElementById('count');
 
         function formatSize(bytes) {
             if (bytes < 1024) return bytes + ' B';
@@ -64,13 +62,6 @@
             const match = filename.match(/(\d{4})-(\d{2})-(\d{2})_(\d{2})-(\d{2})-(\d{2})/);
             if (!match) return filename;
             return match[3] + '.' + match[2] + '.' + match[1] + ' ' + match[4] + ':' + match[5] + ':' + match[6];
-        }
-
-        function formatHourLabel(hourKey) {
-            const match = hourKey.match(/(\d{4})-(\d{2})-(\d{2})_(\d{2})/);
-            if (!match) return hourKey;
-            const h = parseInt(match[4]);
-            return match[3] + '.' + match[2] + '.' + match[1] + ' ' + match[4] + ':00 - ' + String(h + 1).padStart(2, '0') + ':00';
         }
 
         function imageUrl(filename) {
@@ -87,13 +78,6 @@
             const card = document.createElement('div');
             card.className = 'card';
 
-            if (img.heron_detected) {
-                const badge = document.createElement('span');
-                badge.className = 'heron-badge';
-                badge.textContent = 'Fischreiher';
-                card.appendChild(badge);
-            }
-
             const imgEl = document.createElement('img');
             imgEl.src = imageUrl(img.filename);
             imgEl.alt = img.filename;
@@ -108,28 +92,28 @@
             ts.textContent = formatTimestamp(img.filename);
             info.appendChild(ts);
 
-            const size = document.createElement('span');
-            size.textContent = formatSize(img.size);
-            info.appendChild(size);
+            const score = document.createElement('span');
+            score.className = 'score';
+            score.textContent = 'Score: ' + (img.heron_score * 100).toFixed(0) + '%';
+            info.appendChild(score);
 
             card.appendChild(info);
             return card;
         }
 
-        subtitleEl.textContent = formatHourLabel(hour);
-
-        async function loadImages() {
+        async function loadDetections() {
             try {
-                const resp = await fetch('images?hour=' + encodeURIComponent(hour));
-                const images = await resp.json();
+                const resp = await fetch('detections');
+                const detections = await resp.json();
+                countEl.textContent = detections.length + ' Sichtungen';
                 gallery.replaceChildren();
-                if (images.length === 0) {
+                if (detections.length === 0) {
                     const empty = document.createElement('div');
                     empty.className = 'empty';
-                    empty.textContent = 'Keine Bilder in dieser Stunde';
+                    empty.textContent = 'Noch keine Fischreiher erkannt';
                     gallery.appendChild(empty);
                 } else {
-                    for (const img of images) {
+                    for (const img of detections) {
                         gallery.appendChild(createCard(img));
                     }
                 }
@@ -137,12 +121,12 @@
                 gallery.replaceChildren();
                 const empty = document.createElement('div');
                 empty.className = 'empty';
-                empty.textContent = 'Fehler beim Laden der Bilder';
+                empty.textContent = 'Fehler beim Laden';
                 gallery.appendChild(empty);
             }
         }
 
-        loadImages();
+        loadDetections();
     </script>
 </body>
 </html>

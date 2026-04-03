@@ -25,11 +25,18 @@ spec:
           volumeMounts:
             - name: image-storage
               mountPath: /data/images
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "500m"
+            limits:
+              memory: "2Gi"
+              cpu: "2000m"
           livenessProbe:
             httpGet:
               path: /images
               port: 8080
-            initialDelaySeconds: 5
+            initialDelaySeconds: 30
             periodSeconds: 30
       volumes:
         - name: image-storage

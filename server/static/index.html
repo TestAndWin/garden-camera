@@ -12,7 +12,8 @@
         header h1 { font-size: 1.4rem; font-weight: 600; }
         #count { font-size: 0.9rem; color: #888; }
         #gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 1rem; padding: 1.5rem; }
-        .card { background: #16213e; border-radius: 8px; overflow: hidden; border: 1px solid #0f3460; transition: transform 0.15s; }
+        .card { background: #16213e; border-radius: 8px; overflow: hidden; border: 1px solid #0f3460; transition: transform 0.15s; position: relative; }
+        .heron-badge { position: absolute; top: 8px; right: 8px; background: #e74c3c; color: #fff; padding: 2px 8px; border-radius: 12px; font-size: 0.75rem; font-weight: 600; z-index: 1; }
         .card:hover { transform: scale(1.02); }
         .card img { width: 100%; aspect-ratio: 4/3; object-fit: cover; display: block; cursor: pointer; }
         .card .info { padding: 0.6rem 0.8rem; font-size: 0.85rem; color: #aaa; display: flex; justify-content: space-between; }
@@ -32,11 +33,14 @@
         .hour-list a { background: #16213e; border: 1px solid #0f3460; border-radius: 6px; padding: 0.5rem 1rem; color: #aaa; text-decoration: none; font-size: 0.85rem; }
         .hour-list a:hover { background: #0f3460; color: #e0e0e0; }
         .hour-list a .hour-count { color: #666; margin-left: 0.4rem; }
+        .heron-link { background: #e74c3c; color: #fff; border: none; border-radius: 6px; padding: 0.5rem 1rem; font-size: 0.9rem; cursor: pointer; text-decoration: none; font-weight: 600; }
+        .heron-link:hover { background: #c0392b; }
     </style>
 </head>
 <body>
     <header>
         <h1>Gartenkamera</h1>
+        <a id="heron-link" class="heron-link" href="fischreiher.html" style="display:none;">Fischreiher-Sichtungen</a>
         <span id="count"></span>
     </header>
     <div id="gallery"></div>
@@ -82,6 +86,13 @@
         function createCard(img) {
             const card = document.createElement('div');
             card.className = 'card';
+
+            if (img.heron_detected) {
+                const badge = document.createElement('span');
+                badge.className = 'heron-badge';
+                badge.textContent = 'Fischreiher';
+                card.appendChild(badge);
+            }
 
             const imgEl = document.createElement('img');
             imgEl.src = imageUrl(img.filename);
@@ -171,8 +182,21 @@
             } catch (e) {}
         }
 
+        async function checkDetections() {
+            try {
+                const resp = await fetch('detections');
+                const detections = await resp.json();
+                const link = document.getElementById('heron-link');
+                if (detections.length > 0) {
+                    link.style.display = '';
+                    link.textContent = 'Fischreiher-Sichtungen (' + detections.length + ')';
+                }
+            } catch (e) {}
+        }
+
         loadImages();
         loadHours();
+        checkDetections();
     </script>
 </body>
 </html>
