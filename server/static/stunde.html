@@ -10,7 +10,9 @@
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #1a1a2e; color: #e0e0e0; }
         header { background: #16213e; padding: 1rem 2rem; border-bottom: 2px solid #0f3460; display: flex; justify-content: space-between; align-items: center; }
         header h1 { font-size: 1.4rem; font-weight: 600; }
-        #count { font-size: 0.9rem; color: #888; }
+        #subtitle { font-size: 0.9rem; color: #aaa; }
+        #back-link { background: rgba(255,255,255,0.15); color: #fff; border: 1px solid rgba(255,255,255,0.3); border-radius: 6px; padding: 0.5rem 1rem; font-size: 0.9rem; text-decoration: none; }
+        #back-link:hover { background: rgba(255,255,255,0.3); }
         #gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 1rem; padding: 1.5rem; }
         .card { background: #16213e; border-radius: 8px; overflow: hidden; border: 1px solid #0f3460; transition: transform 0.15s; }
         .card:hover { transform: scale(1.02); }
@@ -21,31 +23,25 @@
         #overlay-header { background: #16213e; padding: 1rem 2rem; border-bottom: 2px solid #0f3460; display: flex; justify-content: space-between; align-items: center; }
         #overlay-header h1 { font-size: 1.4rem; font-weight: 600; }
         #overlay-timestamp { font-size: 0.9rem; color: #aaa; }
-        #back-btn { background: rgba(255,255,255,0.15); color: #fff; border: 1px solid rgba(255,255,255,0.3); border-radius: 6px; padding: 0.5rem 1rem; font-size: 1rem; cursor: pointer; }
-        #back-btn:hover { background: rgba(255,255,255,0.3); }
+        #overlay-back-btn { background: rgba(255,255,255,0.15); color: #fff; border: 1px solid rgba(255,255,255,0.3); border-radius: 6px; padding: 0.5rem 1rem; font-size: 1rem; cursor: pointer; }
+        #overlay-back-btn:hover { background: rgba(255,255,255,0.3); }
         #overlay-body { flex: 1; display: flex; justify-content: center; align-items: center; overflow: hidden; }
         #overlay img { max-width: 95%; max-height: 95%; object-fit: contain; cursor: pointer; }
         .empty { text-align: center; padding: 4rem; color: #666; font-size: 1.1rem; grid-column: 1 / -1; }
-        #hour-links { padding: 0 1.5rem 2rem; }
-        #hour-links h2 { font-size: 1.1rem; font-weight: 600; margin-bottom: 0.8rem; color: #ccc; }
-        .hour-list { display: flex; flex-wrap: wrap; gap: 0.5rem; }
-        .hour-list a { background: #16213e; border: 1px solid #0f3460; border-radius: 6px; padding: 0.5rem 1rem; color: #aaa; text-decoration: none; font-size: 0.85rem; }
-        .hour-list a:hover { background: #0f3460; color: #e0e0e0; }
-        .hour-list a .hour-count { color: #666; margin-left: 0.4rem; }
     </style>
 </head>
 <body>
     <header>
         <h1>Gartenkamera</h1>
-        <span id="count"></span>
+        <span id="subtitle"></span>
+        <a id="back-link" href="./">Zurück zur Übersicht</a>
     </header>
     <div id="gallery"></div>
-    <div id="hour-links"></div>
     <div id="overlay">
         <div id="overlay-header">
             <h1>Gartenkamera</h1>
             <span id="overlay-timestamp"></span>
-            <button id="back-btn" onclick="document.getElementById('overlay').classList.remove('active')">Zurück &#8594;</button>
+            <button id="overlay-back-btn" onclick="document.getElementById('overlay').classList.remove('active')">Zurück &#8594;</button>
         </div>
         <div id="overlay-body">
             <img id="overlay-img" src="" alt="" onclick="document.getElementById('overlay').classList.remove('active')">
@@ -53,9 +49,9 @@
     </div>
     <script>
         const gallery = document.getElementById('gallery');
-        const overlay = document.getElementById('overlay');
-        const overlayImg = document.getElementById('overlay-img');
-        const countEl = document.getElementById('count');
+        const subtitleEl = document.getElementById('subtitle');
+        const params = new URLSearchParams(window.location.search);
+        const hour = params.get('hour') || '';
 
         function formatSize(bytes) {
             if (bytes < 1024) return bytes + ' B';
@@ -69,14 +65,21 @@
             return match[3] + '.' + match[2] + '.' + match[1] + ' ' + match[4] + ':' + match[5] + ':' + match[6];
         }
 
+        function formatHourLabel(hourKey) {
+            const match = hourKey.match(/(\d{4})-(\d{2})-(\d{2})_(\d{2})/);
+            if (!match) return hourKey;
+            const h = parseInt(match[4]);
+            return match[3] + '.' + match[2] + '.' + match[1] + ' ' + match[4] + ':00 - ' + String(h + 1).padStart(2, '0') + ':00';
+        }
+
         function imageUrl(filename) {
             return 'images/' + encodeURIComponent(filename);
         }
 
         function openFullscreen(filename) {
-            overlayImg.src = imageUrl(filename);
+            document.getElementById('overlay-img').src = imageUrl(filename);
             document.getElementById('overlay-timestamp').textContent = formatTimestamp(filename);
-            overlay.classList.add('active');
+            document.getElementById('overlay').classList.add('active');
         }
 
         function createCard(img) {
@@ -105,38 +108,22 @@
             return card;
         }
 
-        let knownFiles = new Set();
-        const hourLinksEl = document.getElementById('hour-links');
-
-        function formatHourLabel(hourKey) {
-            // "2026-04-03_14" -> "03.04.2026 14:00 - 15:00"
-            const match = hourKey.match(/(\d{4})-(\d{2})-(\d{2})_(\d{2})/);
-            if (!match) return hourKey;
-            const h = parseInt(match[4]);
-            return match[3] + '.' + match[2] + '.' + match[1] + ' ' + match[4] + ':00 - ' + String(h + 1).padStart(2, '0') + ':00';
-        }
+        subtitleEl.textContent = formatHourLabel(hour);
 
         async function loadImages() {
             try {
-                const resp = await fetch('images?limit=60');
+                const resp = await fetch('images?hour=' + encodeURIComponent(hour));
                 const images = await resp.json();
-                countEl.textContent = images.length + ' Bilder (neueste 60)';
-
-                const newFiles = new Set(images.map(img => img.filename));
-
-                if (knownFiles.size === 0 || newFiles.size !== knownFiles.size || [...newFiles].some(f => !knownFiles.has(f))) {
-                    gallery.replaceChildren();
-                    if (images.length === 0) {
-                        const empty = document.createElement('div');
-                        empty.className = 'empty';
-                        empty.textContent = 'Noch keine Bilder vorhanden';
-                        gallery.appendChild(empty);
-                    } else {
-                        for (const img of images) {
-                            gallery.appendChild(createCard(img));
-                        }
+                gallery.replaceChildren();
+                if (images.length === 0) {
+                    const empty = document.createElement('div');
+                    empty.className = 'empty';
+                    empty.textContent = 'Keine Bilder in dieser Stunde';
+                    gallery.appendChild(empty);
+                } else {
+                    for (const img of images) {
+                        gallery.appendChild(createCard(img));
                     }
-                    knownFiles = newFiles;
                 }
             } catch (e) {
                 gallery.replaceChildren();
@@ -144,35 +131,10 @@
                 empty.className = 'empty';
                 empty.textContent = 'Fehler beim Laden der Bilder';
                 gallery.appendChild(empty);
-                knownFiles = new Set();
             }
         }
 
-        async function loadHours() {
-            try {
-                const resp = await fetch('hours');
-                const hours = await resp.json();
-                hourLinksEl.replaceChildren();
-                if (hours.length === 0) return;
-
-                const heading = document.createElement('h2');
-                heading.textContent = 'Alle Stunden';
-                hourLinksEl.appendChild(heading);
-
-                const list = document.createElement('div');
-                list.className = 'hour-list';
-                for (const h of hours) {
-                    const a = document.createElement('a');
-                    a.href = 'stunde.html?hour=' + encodeURIComponent(h.hour);
-                    a.innerHTML = formatHourLabel(h.hour) + '<span class="hour-count">(' + h.count + ')</span>';
-                    list.appendChild(a);
-                }
-                hourLinksEl.appendChild(list);
-            } catch (e) {}
-        }
-
         loadImages();
-        loadHours();
     </script>
 </body>
 </html>
