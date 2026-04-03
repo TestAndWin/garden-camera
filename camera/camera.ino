@@ -14,6 +14,7 @@
 const long interval = 60000; // 60 sec
 const int hourStart = 6;
 const int hourEnd = 22;
+const unsigned long wifiReconnectTimeoutMs = 15000;
 
 // Battery voltage via voltage divider on GPIO 32
 // Voltage divider: 100k + 100k -> ADC reads half of battery voltage
@@ -82,16 +83,6 @@ void loop() {
   static unsigned long lastRun = -interval;
   unsigned long now = millis();
 
-  if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("WiFi lost, reconnecting...");
-    WiFi.reconnect();
-    while (WiFi.status() != WL_CONNECTED) {
-      Serial.print(".");
-      delay(500);
-    }
-    Serial.println(" reconnected");
-  }
-
   struct tm t;
   if (getLocalTime(&t) && (t.tm_hour < hourStart || t.tm_hour >= hourEnd)) {
     int secondsUntilStart;
@@ -103,6 +94,22 @@ void loop() {
     Serial.printf("Night time (%02d:%02d), sleeping %d seconds until %d:00\n",
                   t.tm_hour, t.tm_min, secondsUntilStart, hourStart);
     esp_deep_sleep(secondsUntilStart * 1000000ULL);
+  }
+
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("WiFi lost, reconnecting...");
+    WiFi.reconnect();
+    unsigned long reconnectStart = millis();
+    while (WiFi.status() != WL_CONNECTED && millis() - reconnectStart < wifiReconnectTimeoutMs) {
+      Serial.print(".");
+      delay(500);
+    }
+    if (WiFi.status() != WL_CONNECTED) {
+      Serial.println(" reconnect timeout");
+      delay(5000);
+      return;
+    }
+    Serial.println(" reconnected");
   }
 
   if (now - lastRun >= interval) {

@@ -8,12 +8,12 @@ ESP32 camera takes a photo every minute (6:00–22:00, deep sleep at night) and 
 camera/               ESP32 Arduino sketch (C++)
   camera.ino            Photo every 60s, HTTP POST to server, NTP time sync,
                         deep sleep 22:00–6:00, battery voltage via ADC
-  wifi-config.h         WiFi credentials + upload URL (DO NOT commit!)
+  wifi-config.h         Local WiFi credentials + upload URL (DO NOT commit!)
 server/               Python FastAPI (Docker)
   main.py               API + web server + CLIP heron detection + auto-cleanup
   static/index.html     Main gallery (newest 60 images, heron badges, battery)
-  static/stunde.html    Hourly detail view
-  static/fischreiher.html  Heron detection results page
+  static/hour.html      Hourly detail view
+  static/heron.html     Heron detection results page
   Dockerfile
   requirements.txt
 kubernetes/           All K8s manifests
@@ -45,36 +45,24 @@ kubernetes/           All K8s manifests
 ## Commands
 
 ```bash
-# Use minikube Docker daemon
-eval $(minikube docker-env)
+# Full deploy from project root
+bash kubernetes/deploy.sh
 
-# Build server image (build context = project root)
+# Manual build from project root
 docker build -t garden-camera-server:latest -f server/Dockerfile .
-
-# Apply all K8s manifests
-kubectl apply -f kubernetes/
-
-# Redeploy after code changes
-kubectl rollout restart deployment/garden-camera-server -n default
 
 # View logs
 kubectl logs -l app=garden-camera-server -n default --tail=100
 
-# Get service URL (minikube)
-minikube service garden-camera-server --url
+# Local browser access without ingress
+kubectl port-forward svc/garden-camera-server 8080:80 -n default
 ```
 
 ### After Server Code Changes
 
 ```bash
-# 1. Build
-eval $(minikube docker-env) && docker build -t garden-camera-server:latest -f server/Dockerfile .
-
-# 2. Redeploy
-kubectl rollout restart deployment/garden-camera-server -n default
-
-# 3. Check logs
-kubectl logs -l app=garden-camera-server -n default --tail=50 --follow
+# Re-run the deploy script
+bash kubernetes/deploy.sh
 ```
 
 ## API Endpoints
@@ -88,8 +76,8 @@ kubectl logs -l app=garden-camera-server -n default --tail=50 --follow
 | `GET` | `/detections` | List images where heron was detected |
 | `GET` | `/status` | Battery voltage + last upload timestamp |
 | `GET` | `/` | Main gallery |
-| `GET` | `/stunde.html` | Hourly detail view |
-| `GET` | `/fischreiher.html` | Heron detections page |
+| `GET` | `/hour.html` | Hourly detail view |
+| `GET` | `/heron.html` | Heron detections page |
 
 ## Image Storage
 
@@ -104,17 +92,21 @@ All resources in namespace `default`.
 | Resource | Name | Description |
 |---|---|---|
 | Deployment | `garden-camera-server` | Web server + upload API, port 8080 |
-| Service | `garden-camera-server` | Exposes deployment (NodePort for minikube) |
+| Service | `garden-camera-server` | Internal ClusterIP service on port 80 -> 8080 |
+| Ingress | `garden-camera-server` | Exposes `/garden-camera` on host `mini-pc` |
 | PVC | `garden-camera-data` | Image storage at `/data/images` |
 
 - Server listens on port 8080
-- ESP32 `UPLOAD_URL` must point to minikube/host IP (currently `http://192.168.178.50/upload`)
-- Use `minikube service garden-camera-server --url` to get the external URL
+- Browser UI is available at `http://mini-pc/garden-camera`
+- ESP32 `uploadUrl` should point to `http://mini-pc/garden-camera/upload`
+- If `mini-pc` is not the correct hostname on the network, update `kubernetes/ingress.yaml` and `camera/wifi-config.h`
 
-## Planned Features
+## Detection Behavior
 
-- **Bird detection**: Image classification to check if a specific bird is visible in the photo
-- Details (model, analysis timing) still open
+- CLIP model: `openai/clip-vit-base-patch32`
+- Detection runs asynchronously after startup and analyzes new `.jpg` files without a sidecar JSON
+- Results are written as sidecar `.json` files next to each image
+- Default detection threshold: `0.5` via `DETECTION_THRESHOLD`
 
 ## UI Language
 
@@ -133,7 +125,8 @@ German.
 
 ### Kubernetes
 - After manifest changes: always `kubectl apply -f kubernetes/` — file != cluster state
-- Use `eval $(minikube docker-env)` before building images, otherwise minikube can't find them
+- Ingress uses host `mini-pc` and path prefix `/garden-camera`
+- `bash kubernetes/deploy.sh` already handles minikube image loading when the current context is `minikube`
 
 ## Development Rules
 

@@ -11,7 +11,7 @@ echo "=== Garden Camera Deploy ==="
 # ── 1. Build Docker image ───────────────────────────────────────────────────
 echo ""
 echo "→ Building Docker image…"
-docker build -t garden-camera-server:latest -f "$PROJECT_ROOT/server/Dockerfile" "$PROJECT_ROOT/server"
+docker build -t garden-camera-server:latest -f "$PROJECT_ROOT/server/Dockerfile" "$PROJECT_ROOT"
 
 # If running on minikube, force-load the exact local image via tar.
 # This avoids stale :latest tags in the node runtime.

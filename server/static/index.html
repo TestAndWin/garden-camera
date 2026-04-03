@@ -3,7 +3,6 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <base href="/garden-camera/">
     <title>Gartenkamera</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -41,7 +40,7 @@
     <header>
         <h1>Gartenkamera</h1>
         <div style="display: flex; gap: 1.5rem; align-items: center;">
-            <a id="heron-link" class="heron-link" href="fischreiher.html" style="display:none;">Fischreiher-Sichtungen</a>
+            <a id="heron-link" class="heron-link" href="heron.html" style="display:none;">Fischreiher-Sichtungen</a>
             <span id="battery"></span>
             <span id="count"></span>
         </div>
@@ -177,7 +176,7 @@
                 list.className = 'hour-list';
                 for (const h of hours) {
                     const a = document.createElement('a');
-                    a.href = 'stunde.html?hour=' + encodeURIComponent(h.hour);
+                    a.href = 'hour.html?hour=' + encodeURIComponent(h.hour);
                     a.innerHTML = formatHourLabel(h.hour) + '<span class="hour-count">(' + h.count + ')</span>';
                     list.appendChild(a);
                 }

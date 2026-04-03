@@ -3,14 +3,15 @@ import json
 import logging
 import os
 import re
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-CEST = timezone(timedelta(hours=2))
+LOCAL_TZ = ZoneInfo("Europe/Berlin")
 logger = logging.getLogger("garden-camera")
 logging.basicConfig(level=logging.INFO)
 
@@ -58,7 +59,7 @@ def detect_heron(image_path: Path) -> dict:
     result = {
         "heron_detected": heron_score >= DETECTION_THRESHOLD,
         "heron_score": round(heron_score, 3),
-        "analyzed_at": datetime.now(CEST).isoformat(),
+        "analyzed_at": datetime.now(LOCAL_TZ).isoformat(),
     }
 
     sidecar = image_path.with_suffix(".json")
@@ -101,7 +102,7 @@ async def upload_image(request: Request):
     if not body:
         return Response(status_code=400, content="Empty body")
 
-    timestamp = datetime.now(CEST).strftime("%Y-%m-%d_%H-%M-%S")
+    timestamp = datetime.now(LOCAL_TZ).strftime("%Y-%m-%d_%H-%M-%S")
     filename = f"{timestamp}.jpg"
     filepath = IMAGES_DIR / filename
 
@@ -116,8 +117,11 @@ async def upload_image(request: Request):
 
     battery = request.headers.get("X-Battery-Voltage")
     if battery:
-        status = {"battery_voltage": float(battery), "last_upload": timestamp}
-        STATUS_FILE.write_text(json.dumps(status))
+        try:
+            status = {"battery_voltage": float(battery), "last_upload": timestamp}
+            STATUS_FILE.write_text(json.dumps(status))
+        except ValueError:
+            logger.warning("Ignoriere ungueltigen X-Battery-Voltage Header: %r", battery)
 
     return {"filename": filename, "size": len(body)}
 
@@ -190,24 +194,24 @@ async def index():
     return FileResponse("static/index.html")
 
 
-@app.get("/stunde.html")
-async def stunde():
-    return FileResponse("static/stunde.html")
+@app.get("/hour.html")
+async def hour_page():
+    return FileResponse("static/hour.html")
 
 
-@app.get("/fischreiher.html")
-async def fischreiher():
-    return FileResponse("static/fischreiher.html")
+@app.get("/heron.html")
+async def heron_page():
+    return FileResponse("static/heron.html")
 
 
 def cleanup_old_images():
-    cutoff = datetime.now(CEST) - timedelta(days=2)
+    cutoff = datetime.now(LOCAL_TZ) - timedelta(days=2)
     deleted = 0
     for f in list(IMAGES_DIR.glob("*.jpg")) + list(IMAGES_DIR.glob("*.json")):
         match = re.match(r"(\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})", f.name)
         if not match:
             continue
-        ts = datetime.strptime(match.group(1), "%Y-%m-%d_%H-%M-%S").replace(tzinfo=CEST)
+        ts = datetime.strptime(match.group(1), "%Y-%m-%d_%H-%M-%S").replace(tzinfo=LOCAL_TZ)
         if ts < cutoff:
             f.unlink()
             deleted += 1
