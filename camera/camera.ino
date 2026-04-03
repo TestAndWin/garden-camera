@@ -1,5 +1,6 @@
 #include <WiFi.h>
 #include <HTTPClient.h>
+#include <time.h>
 #include "esp_camera.h"
 
 #include "wifi-config.h"
@@ -11,6 +12,8 @@
 // ssid, password and uploadUrl are stored in wifi-config.h (as const char*)
 
 const long interval = 60000; // 60 sec
+const int hourStart = 6;
+const int hourEnd = 22;
 
 void setup() {
   Serial.begin(115200);
@@ -26,7 +29,15 @@ void setup() {
     delay(500);
   }
   Serial.println(" connected");
-  delay(1000);
+
+  configTzTime("CET-1CEST,M3.5.0,M10.5.0/3", "pool.ntp.org");
+  Serial.print("Syncing time");
+  struct tm t;
+  while (!getLocalTime(&t)) {
+    Serial.print(".");
+    delay(500);
+  }
+  Serial.printf(" %02d:%02d:%02d\n", t.tm_hour, t.tm_min, t.tm_sec);
 
   camera_config_t config;
   config.ledc_channel = LEDC_CHANNEL_0;
@@ -74,6 +85,19 @@ void loop() {
       delay(500);
     }
     Serial.println(" reconnected");
+  }
+
+  struct tm t;
+  if (getLocalTime(&t) && (t.tm_hour < hourStart || t.tm_hour >= hourEnd)) {
+    int secondsUntilStart;
+    if (t.tm_hour >= hourEnd) {
+      secondsUntilStart = (24 - t.tm_hour + hourStart) * 3600 - t.tm_min * 60 - t.tm_sec;
+    } else {
+      secondsUntilStart = (hourStart - t.tm_hour) * 3600 - t.tm_min * 60 - t.tm_sec;
+    }
+    Serial.printf("Night time (%02d:%02d), sleeping %d seconds until %d:00\n",
+                  t.tm_hour, t.tm_min, secondsUntilStart, hourStart);
+    esp_deep_sleep(secondsUntilStart * 1000000ULL);
   }
 
   if (now - lastRun >= interval) {
