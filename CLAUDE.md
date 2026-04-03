@@ -1,18 +1,23 @@
 # Garden Camera
 
-ESP32 camera takes a photo every minute and uploads it to a local server. The server stores images, serves a web UI for browsing them, and will later detect specific birds. Local system, not for production use.
+ESP32 camera takes a photo every minute (6:00–22:00, deep sleep at night) and uploads it to a local server. The server stores images, detects grey herons via CLIP, and serves a web UI to browse images and detections. Battery voltage is monitored. Local system, not for production use.
 
 ## Architecture
 
 ```
 camera/               ESP32 Arduino sketch (C++)
-  camera.ino            Photo every 60s, HTTP POST to server
-  wifi-config.h         WiFi credentials (DO NOT commit!)
+  camera.ino            Photo every 60s, HTTP POST to server, NTP time sync,
+                        deep sleep 22:00–6:00, battery voltage via ADC
+  wifi-config.h         WiFi credentials + upload URL (DO NOT commit!)
 server/               Python FastAPI (Docker)
-  main.py               API + web server
+  main.py               API + web server + CLIP heron detection + auto-cleanup
+  static/index.html     Main gallery (newest 60 images, heron badges, battery)
+  static/stunde.html    Hourly detail view
+  static/fischreiher.html  Heron detection results page
   Dockerfile
   requirements.txt
 kubernetes/           All K8s manifests
+  deploy.sh             Full build + deploy script
 ```
 
 ## Tech Stack
@@ -23,7 +28,7 @@ kubernetes/           All K8s manifests
 | Server | Python 3.12, FastAPI, Uvicorn |
 | Deployment | Docker, Kubernetes (minikube) |
 | Image storage | Filesystem (no S3/DB for images) |
-| Bird detection | Planned (not yet implemented) |
+| Bird detection | CLIP (openai/clip-vit-base-patch32), sidecar JSON per image |
 
 ## ESP32
 
@@ -32,8 +37,10 @@ kubernetes/           All K8s manifests
 - **Partition Scheme**: Default 4MB with Spiffs
 - **Image format**: JPEG, UXGA (1600x1200), quality 10 (high)
 - **Interval**: 60 seconds
-- **Upload**: HTTP POST with `Content-Type: image/jpeg` to `UPLOAD_URL`
-- `wifi-config.h` contains `ssid` and `password` as `const char*` — **never commit**, add to `.gitignore`
+- **Active hours**: 6:00–22:00 (CET/CEST via NTP), deep sleep outside this window
+- **Upload**: HTTP POST with `Content-Type: image/jpeg` + `X-Battery-Voltage` header to `uploadUrl`
+- **Battery**: ADC on GPIO 32, voltage divider 2x 100k (ratio 2.0)
+- `wifi-config.h` contains `ssid`, `password` and `uploadUrl` as `const char*` — **never commit**, add to `.gitignore`
 
 ## Commands
 
@@ -74,10 +81,15 @@ kubectl logs -l app=garden-camera-server -n default --tail=50 --follow
 
 | Method | Path | Description |
 |---|---|---|
-| `POST` | `/upload` | Receive image (JPEG, raw body). Saves with timestamp filename |
-| `GET` | `/images` | List all stored images (JSON) |
+| `POST` | `/upload` | Receive image (JPEG, raw body). Saves with timestamp filename. Reads `X-Battery-Voltage` header |
+| `GET` | `/images` | List images (JSON). Params: `limit` (int), `hour` (e.g. `2026-04-03_14`). Includes `heron_detected`/`heron_score` from sidecar |
 | `GET` | `/images/{filename}` | Retrieve single image |
-| `GET` | `/` | Web UI (image gallery) |
+| `GET` | `/hours` | List all hours with image count |
+| `GET` | `/detections` | List images where heron was detected |
+| `GET` | `/status` | Battery voltage + last upload timestamp |
+| `GET` | `/` | Main gallery |
+| `GET` | `/stunde.html` | Hourly detail view |
+| `GET` | `/fischreiher.html` | Heron detections page |
 
 ## Image Storage
 
