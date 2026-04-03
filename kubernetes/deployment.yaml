@@ -1,0 +1,37 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: garden-camera-server
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: garden-camera-server
+  template:
+    metadata:
+      labels:
+        app: garden-camera-server
+    spec:
+      containers:
+        - name: server
+          image: garden-camera-server:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8080
+          env:
+            - name: IMAGES_DIR
+              value: /data/images
+          volumeMounts:
+            - name: image-storage
+              mountPath: /data/images
+          livenessProbe:
+            httpGet:
+              path: /images
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 30
+      volumes:
+        - name: image-storage
+          persistentVolumeClaim:
+            claimName: garden-camera-data

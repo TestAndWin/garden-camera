@@ -1,0 +1,22 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: garden-camera-server
+  namespace: default
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+    nginx.ingress.kubernetes.io/use-regex: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: mini-pc
+      http:
+        paths:
+          - path: /garden-camera(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: garden-camera-server
+                port:
+                  number: 80

@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: garden-camera-server
+  namespace: default
+spec:
+  type: ClusterIP
+  selector:
+    app: garden-camera-server
+  ports:
+    - port: 80
+      targetPort: 8080

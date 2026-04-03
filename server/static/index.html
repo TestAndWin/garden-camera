@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gartenkamera</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #1a1a2e; color: #e0e0e0; }
+        header { background: #16213e; padding: 1rem 2rem; border-bottom: 2px solid #0f3460; display: flex; justify-content: space-between; align-items: center; }
+        header h1 { font-size: 1.4rem; font-weight: 600; }
+        #count { font-size: 0.9rem; color: #888; }
+        #gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 1rem; padding: 1.5rem; }
+        .card { background: #16213e; border-radius: 8px; overflow: hidden; border: 1px solid #0f3460; transition: transform 0.15s; }
+        .card:hover { transform: scale(1.02); }
+        .card img { width: 100%; aspect-ratio: 4/3; object-fit: cover; display: block; cursor: pointer; }
+        .card .info { padding: 0.6rem 0.8rem; font-size: 0.85rem; color: #aaa; display: flex; justify-content: space-between; }
+        #overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); z-index: 100; justify-content: center; align-items: center; cursor: pointer; }
+        #overlay.active { display: flex; }
+        #overlay img { max-width: 95%; max-height: 95%; object-fit: contain; }
+        .empty { text-align: center; padding: 4rem; color: #666; font-size: 1.1rem; grid-column: 1 / -1; }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Gartenkamera</h1>
+        <span id="count"></span>
+    </header>
+    <div id="gallery"></div>
+    <div id="overlay" onclick="this.classList.remove('active')">
+        <img id="overlay-img" src="" alt="">
+    </div>
+    <script>
+        const gallery = document.getElementById('gallery');
+        const overlay = document.getElementById('overlay');
+        const overlayImg = document.getElementById('overlay-img');
+        const countEl = document.getElementById('count');
+
+        function formatSize(bytes) {
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+            return (bytes / 1048576).toFixed(1) + ' MB';
+        }
+
+        function formatTimestamp(filename) {
+            const match = filename.match(/(\d{4})-(\d{2})-(\d{2})_(\d{2})-(\d{2})-(\d{2})/);
+            if (!match) return filename;
+            return match[3] + '.' + match[2] + '.' + match[1] + ' ' + match[4] + ':' + match[5] + ':' + match[6];
+        }
+
+        function imageUrl(filename) {
+            return 'images/' + encodeURIComponent(filename);
+        }
+
+        function openFullscreen(filename) {
+            overlayImg.src = imageUrl(filename);
+            overlay.classList.add('active');
+        }
+
+        function createCard(img) {
+            const card = document.createElement('div');
+            card.className = 'card';
+
+            const imgEl = document.createElement('img');
+            imgEl.src = imageUrl(img.filename);
+            imgEl.alt = img.filename;
+            imgEl.loading = 'lazy';
+            imgEl.addEventListener('click', () => openFullscreen(img.filename));
+            card.appendChild(imgEl);
+
+            const info = document.createElement('div');
+            info.className = 'info';
+
+            const ts = document.createElement('span');
+            ts.textContent = formatTimestamp(img.filename);
+            info.appendChild(ts);
+
+            const size = document.createElement('span');
+            size.textContent = formatSize(img.size);
+            info.appendChild(size);
+
+            card.appendChild(info);
+            return card;
+        }
+
+        let knownFiles = new Set();
+
+        async function loadImages() {
+            try {
+                const resp = await fetch('images');
+                const images = await resp.json();
+                countEl.textContent = images.length + ' Bilder';
+
+                const newFiles = new Set(images.map(img => img.filename));
+
+                if (knownFiles.size === 0 || newFiles.size !== knownFiles.size || [...newFiles].some(f => !knownFiles.has(f))) {
+                    gallery.replaceChildren();
+                    if (images.length === 0) {
+                        const empty = document.createElement('div');
+                        empty.className = 'empty';
+                        empty.textContent = 'Noch keine Bilder vorhanden';
+                        gallery.appendChild(empty);
+                    } else {
+                        for (const img of images) {
+                            gallery.appendChild(createCard(img));
+                        }
+                    }
+                    knownFiles = newFiles;
+                }
+            } catch (e) {
+                gallery.replaceChildren();
+                const empty = document.createElement('div');
+                empty.className = 'empty';
+                empty.textContent = 'Fehler beim Laden der Bilder';
+                gallery.appendChild(empty);
+                knownFiles = new Set();
+            }
+        }
+
+        loadImages();
+        setInterval(loadImages, 30000);
+    </script>
+</body>
+</html>
