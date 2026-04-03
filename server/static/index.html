@@ -40,8 +40,11 @@
 <body>
     <header>
         <h1>Gartenkamera</h1>
-        <a id="heron-link" class="heron-link" href="fischreiher.html" style="display:none;">Fischreiher-Sichtungen</a>
-        <span id="count"></span>
+        <div style="display: flex; gap: 1.5rem; align-items: center;">
+            <a id="heron-link" class="heron-link" href="fischreiher.html" style="display:none;">Fischreiher-Sichtungen</a>
+            <span id="battery"></span>
+            <span id="count"></span>
+        </div>
     </header>
     <div id="gallery"></div>
     <div id="hour-links"></div>
@@ -194,9 +197,23 @@
             } catch (e) {}
         }
 
+        const batteryEl = document.getElementById('battery');
+
+        async function loadStatus() {
+            try {
+                const resp = await fetch('status');
+                const data = await resp.json();
+                if (data.battery_voltage !== null) {
+                    batteryEl.textContent = data.battery_voltage.toFixed(2) + 'V';
+                }
+            } catch (e) {}
+        }
+
         loadImages();
         loadHours();
         checkDetections();
+        loadStatus();
+        setInterval(loadStatus, 30000);
     </script>
 </body>
 </html>

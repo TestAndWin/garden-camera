@@ -15,6 +15,11 @@ const long interval = 60000; // 60 sec
 const int hourStart = 6;
 const int hourEnd = 22;
 
+// Battery voltage via voltage divider on GPIO 32
+// Voltage divider: 100k + 100k -> ADC reads half of battery voltage
+const int batteryPin = 32;
+const float voltageDividerRatio = 2.0;
+
 void setup() {
   Serial.begin(115200);
   while (!Serial)
@@ -118,6 +123,9 @@ void takePhoto() {
   Serial.print("Connecting to server...");
   if (http.begin(uploadUrl)) {
     http.addHeader("Content-Type", "image/jpeg");
+    float batteryV = readBatteryVoltage();
+    http.addHeader("X-Battery-Voltage", String(batteryV, 2));
+    Serial.printf("Battery: %.2fV ", batteryV);
     int httpResponseCode = http.POST(fb->buf, fb->len);
 
     if (httpResponseCode > 0) {
@@ -130,4 +138,10 @@ void takePhoto() {
     Serial.println(" Unable to connect to server");
   }
   esp_camera_fb_return(fb);
+}
+
+float readBatteryVoltage() {
+  int raw = analogRead(batteryPin);
+  float voltage = (raw / 4095.0) * 3.3 * voltageDividerRatio;
+  return voltage;
 }

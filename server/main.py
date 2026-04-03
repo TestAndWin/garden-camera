@@ -16,6 +16,7 @@ logging.basicConfig(level=logging.INFO)
 
 IMAGES_DIR = Path(os.getenv("IMAGES_DIR", "/data/images"))
 IMAGES_DIR.mkdir(parents=True, exist_ok=True)
+STATUS_FILE = IMAGES_DIR.parent / "status.json"
 
 DETECTION_THRESHOLD = float(os.getenv("DETECTION_THRESHOLD", "0.5"))
 CANDIDATE_LABELS = [
@@ -112,6 +113,12 @@ async def upload_image(request: Request):
         counter += 1
 
     filepath.write_bytes(body)
+
+    battery = request.headers.get("X-Battery-Voltage")
+    if battery:
+        status = {"battery_voltage": float(battery), "last_upload": timestamp}
+        STATUS_FILE.write_text(json.dumps(status))
+
     return {"filename": filename, "size": len(body)}
 
 
@@ -159,6 +166,13 @@ async def list_hours():
         key = f.name[:13]
         hours[key] = hours.get(key, 0) + 1
     return [{"hour": k, "count": v} for k, v in hours.items()]
+
+
+@app.get("/status")
+async def get_status():
+    if not STATUS_FILE.exists():
+        return {"battery_voltage": None, "last_upload": None}
+    return json.loads(STATUS_FILE.read_text())
 
 
 @app.get("/images/{filename}")
