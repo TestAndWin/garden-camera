@@ -19,11 +19,13 @@ IMAGES_DIR = Path(os.getenv("IMAGES_DIR", "/data/images"))
 IMAGES_DIR.mkdir(parents=True, exist_ok=True)
 STATUS_FILE = IMAGES_DIR.parent / "status.json"
 
-DETECTION_THRESHOLD = float(os.getenv("DETECTION_THRESHOLD", "0.5"))
+DETECTION_THRESHOLD = float(os.getenv("DETECTION_THRESHOLD", "0.75"))
 CANDIDATE_LABELS = [
-    "a photo of a grey heron standing in a garden",
-    "a photo of a garden with no birds",
-    "a photo of a garden with plants and flowers",
+    "a grey heron bird",
+    "a wooden deck or patio in a garden",
+    "trees, bushes and plants in a garden",
+    "an empty garden with no animals",
+    "garden furniture or decorations",
 ]
 
 clip_model = None
