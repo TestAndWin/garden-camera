@@ -32,6 +32,7 @@ const float voltageDividerRatio = 2.0;
 struct ImageBuffer {
   uint8_t *data;
   size_t len;
+  char timestamp[20]; // "2026-04-06_17-30-00"
 };
 ImageBuffer imageBuffer[batchSize];
 int imageCount = 0;
@@ -71,6 +72,9 @@ void lightSleep(unsigned long ms) {
   Serial.flush();
   esp_sleep_enable_timer_wakeup(ms * 1000ULL);
   esp_light_sleep_start();
+  // Discard first frame after wake-up — camera DMA needs one cycle to sync
+  camera_fb_t *discard = esp_camera_fb_get();
+  if (discard) esp_camera_fb_return(discard);
 }
 
 bool isNightTime(struct tm *t) {
@@ -113,12 +117,13 @@ float readBatteryVoltage() {
   return voltage;
 }
 
-void uploadImage(uint8_t *buf, size_t len, float batteryV) {
+void uploadImage(uint8_t *buf, size_t len, float batteryV, const char *timestamp) {
   HTTPClient http;
   http.setTimeout(10000);
   if (http.begin(uploadUrl)) {
     http.addHeader("Content-Type", "image/jpeg");
     http.addHeader("X-Battery-Voltage", String(batteryV, 2));
+    if (timestamp) http.addHeader("X-Capture-Time", timestamp);
     int httpResponseCode = http.POST(buf, len);
     if (httpResponseCode > 0) {
       Serial.printf("Response: %d\n", httpResponseCode);
@@ -151,8 +156,8 @@ void uploadBuffered() {
   float batteryV = readBatteryVoltage();
   Serial.printf("Battery: %.2fV\n", batteryV);
   for (int i = 0; i < imageCount; i++) {
-    Serial.printf("  Uploading image %d/%d (%d bytes)... ", i + 1, imageCount, imageBuffer[i].len);
-    uploadImage(imageBuffer[i].data, imageBuffer[i].len, batteryV);
+    Serial.printf("  Uploading image %d/%d (%d bytes, %s)... ", i + 1, imageCount, imageBuffer[i].len, imageBuffer[i].timestamp);
+    uploadImage(imageBuffer[i].data, imageBuffer[i].len, batteryV, imageBuffer[i].timestamp);
   }
   freeBuffer();
   wifiOff();
@@ -190,6 +195,12 @@ bool captureToBuffer() {
   }
   memcpy(imageBuffer[imageCount].data, fb->buf, fb->len);
   imageBuffer[imageCount].len = fb->len;
+  struct tm t;
+  if (getLocalTime(&t)) {
+    snprintf(imageBuffer[imageCount].timestamp, sizeof(imageBuffer[imageCount].timestamp),
+             "%04d-%02d-%02d_%02d-%02d-%02d", t.tm_year + 1900, t.tm_mon + 1, t.tm_mday,
+             t.tm_hour, t.tm_min, t.tm_sec);
+  }
   imageCount++;
   Serial.printf("%d bytes stored\n", fb->len);
   esp_camera_fb_return(fb);

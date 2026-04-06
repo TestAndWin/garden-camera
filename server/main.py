@@ -104,7 +104,8 @@ async def upload_image(request: Request):
     if not body:
         return Response(status_code=400, content="Empty body")
 
-    timestamp = datetime.now(LOCAL_TZ).strftime("%Y-%m-%d_%H-%M-%S")
+    capture_time = request.headers.get("X-Capture-Time")
+    timestamp = capture_time if capture_time else datetime.now(LOCAL_TZ).strftime("%Y-%m-%d_%H-%M-%S")
     filename = f"{timestamp}.jpg"
     filepath = IMAGES_DIR / filename
 
