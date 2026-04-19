@@ -210,15 +210,22 @@ async def heron_page():
 def cleanup_old_images():
     cutoff = datetime.now(LOCAL_TZ) - timedelta(days=2)
     deleted = 0
+    kept = 0
     for f in list(IMAGES_DIR.glob("*.jpg")) + list(IMAGES_DIR.glob("*.json")):
         match = re.match(r"(\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})", f.name)
         if not match:
             continue
         ts = datetime.strptime(match.group(1), "%Y-%m-%d_%H-%M-%S").replace(tzinfo=LOCAL_TZ)
-        if ts < cutoff:
-            f.unlink()
-            deleted += 1
-    logger.info("Cleanup: %d alte Dateien gelöscht", deleted)
+        if ts >= cutoff:
+            continue
+        jpg = f.with_suffix(".jpg")
+        detection = read_sidecar(jpg)
+        if detection and detection.get("heron_detected"):
+            kept += 1
+            continue
+        f.unlink()
+        deleted += 1
+    logger.info("Cleanup: %d alte Dateien gelöscht, %d Fischreiher-Dateien behalten", deleted, kept)
 
 
 async def cleanup_task():
