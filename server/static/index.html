@@ -22,6 +22,7 @@
         #gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 1rem; padding: 1.5rem; }
         .card { background: #16213e; border-radius: 8px; overflow: hidden; border: 1px solid #0f3460; transition: transform 0.15s; position: relative; }
         .heron-badge { position: absolute; top: 8px; right: 8px; background: #e74c3c; color: #fff; padding: 2px 8px; border-radius: 12px; font-size: 0.75rem; font-weight: 600; z-index: 1; }
+        .other-badge { position: absolute; top: 8px; right: 8px; background: #f39c12; color: #fff; padding: 2px 8px; border-radius: 12px; font-size: 0.75rem; font-weight: 600; z-index: 1; }
         .card:hover { transform: scale(1.02); }
         .card img { width: 100%; aspect-ratio: 4/3; object-fit: cover; display: block; cursor: pointer; }
         .card .info { padding: 0.6rem 0.8rem; font-size: 0.85rem; color: #aaa; display: flex; justify-content: space-between; }
@@ -102,6 +103,11 @@
                 const badge = document.createElement('span');
                 badge.className = 'heron-badge';
                 badge.textContent = 'Fischreiher';
+                card.appendChild(badge);
+            } else if (img.other_animal_detected) {
+                const badge = document.createElement('span');
+                badge.className = 'other-badge';
+                badge.textContent = 'Sonstige';
                 card.appendChild(badge);
             }
 

@@ -19,14 +19,36 @@ IMAGES_DIR = Path(os.getenv("IMAGES_DIR", "/data/images"))
 IMAGES_DIR.mkdir(parents=True, exist_ok=True)
 STATUS_FILE = IMAGES_DIR.parent / "status.json"
 
-DETECTION_THRESHOLD = float(os.getenv("DETECTION_THRESHOLD", "0.75"))
-CANDIDATE_LABELS = [
+DETECTION_THRESHOLD = float(os.getenv("DETECTION_THRESHOLD", "0.6"))
+OTHER_THRESHOLD = float(os.getenv("OTHER_THRESHOLD", "0.6"))
+HERON_LABELS = [
     "a grey heron bird",
+    "the body of a grey heron bird",
+    "the head and neck of a grey heron bird",
+]
+OTHER_ANIMAL_LABELS = [
+    "a cat",
+    "a dog",
+    "a fox",
+    "a squirrel",
+    "a hedgehog",
+    "a rabbit",
+    "a small songbird",
+    "a crow or magpie",
+    "a duck",
+]
+NON_HERON_LABELS = [
     "a wooden deck or patio in a garden",
-    "trees, bushes and plants in a garden",
+    "trees and bushes in a garden",
+    "green plants and grass",
+    "a garden pond with water and irises, no bird",
     "an empty garden with no animals",
     "garden furniture or decorations",
+    "the sky above a garden",
 ]
+CANDIDATE_LABELS = HERON_LABELS + OTHER_ANIMAL_LABELS + NON_HERON_LABELS
+HERON_IDX = list(range(len(HERON_LABELS)))
+OTHER_IDX = list(range(len(HERON_LABELS), len(HERON_LABELS) + len(OTHER_ANIMAL_LABELS)))
 
 clip_model = None
 clip_processor = None
@@ -44,23 +66,50 @@ def load_model():
     logger.info("CLIP-Modell geladen")
 
 
+def _build_crops(image):
+    w, h = image.size
+    crops = [image]
+    tile_w, tile_h = w // 2, h // 2
+    step_x, step_y = w // 4, h // 4
+    for iy in range(3):
+        for ix in range(3):
+            x = ix * step_x
+            y = iy * step_y
+            crops.append(image.crop((x, y, x + tile_w, y + tile_h)))
+    return crops
+
+
 def detect_heron(image_path: Path) -> dict:
     import torch
     from PIL import Image
 
     image = Image.open(image_path).convert("RGB")
-    inputs = clip_processor(text=CANDIDATE_LABELS, images=image, return_tensors="pt", padding=True)
+    crops = _build_crops(image)
+
+    inputs = clip_processor(text=CANDIDATE_LABELS, images=crops, return_tensors="pt", padding=True)
 
     with torch.no_grad():
         outputs = clip_model(**inputs)
 
-    logits = outputs.logits_per_image[0]
-    probs = logits.softmax(dim=0).tolist()
+    probs = outputs.logits_per_image.softmax(dim=1)
+    heron_max_per_crop = probs[:, HERON_IDX].max(dim=1).values
+    heron_score = float(heron_max_per_crop.max().item())
 
-    heron_score = probs[0]
+    other_probs = probs[:, OTHER_IDX]
+    other_max_per_crop, other_argmax_per_crop = other_probs.max(dim=1)
+    best_crop = int(other_max_per_crop.argmax().item())
+    other_score = float(other_max_per_crop[best_crop].item())
+    other_label = OTHER_ANIMAL_LABELS[int(other_argmax_per_crop[best_crop].item())]
+
+    heron_detected = heron_score >= DETECTION_THRESHOLD
+    other_detected = (not heron_detected) and other_score >= OTHER_THRESHOLD
+
     result = {
-        "heron_detected": heron_score >= DETECTION_THRESHOLD,
+        "heron_detected": heron_detected,
         "heron_score": round(heron_score, 3),
+        "other_animal_detected": other_detected,
+        "other_animal_score": round(other_score, 3),
+        "other_animal_label": other_label,
         "analyzed_at": datetime.now(LOCAL_TZ).isoformat(),
     }
 
@@ -77,13 +126,21 @@ async def detection_task():
             continue
         jpg_files = sorted(IMAGES_DIR.glob("*.jpg"))
         for jpg in jpg_files:
-            sidecar = jpg.with_suffix(".json")
-            if sidecar.exists():
+            existing = read_sidecar(jpg)
+            if existing is not None and "other_animal_detected" in existing:
                 continue
             try:
                 result = await loop.run_in_executor(None, detect_heron, jpg)
-                status = "Fischreiher erkannt!" if result["heron_detected"] else "kein Fischreiher"
-                logger.info("Analyse %s: %s (Score: %.3f)", jpg.name, status, result["heron_score"])
+                if result["heron_detected"]:
+                    status = "Fischreiher erkannt!"
+                elif result["other_animal_detected"]:
+                    status = f"Sonstiges Tier erkannt ({result['other_animal_label']})"
+                else:
+                    status = "kein Tier"
+                logger.info(
+                    "Analyse %s: %s (Reiher: %.3f, Sonstige: %.3f)",
+                    jpg.name, status, result["heron_score"], result["other_animal_score"],
+                )
             except Exception:
                 logger.exception("Fehler bei Analyse von %s", jpg.name)
 
@@ -143,9 +200,15 @@ async def list_images(limit: int = 0, hour: str = ""):
         if detection:
             entry["heron_detected"] = detection["heron_detected"]
             entry["heron_score"] = detection["heron_score"]
+            entry["other_animal_detected"] = detection.get("other_animal_detected")
+            entry["other_animal_score"] = detection.get("other_animal_score")
+            entry["other_animal_label"] = detection.get("other_animal_label")
         else:
             entry["heron_detected"] = None
             entry["heron_score"] = None
+            entry["other_animal_detected"] = None
+            entry["other_animal_score"] = None
+            entry["other_animal_label"] = None
         result.append(entry)
     return result
 
@@ -220,12 +283,12 @@ def cleanup_old_images():
             continue
         jpg = f.with_suffix(".jpg")
         detection = read_sidecar(jpg)
-        if detection and detection.get("heron_detected"):
+        if detection and (detection.get("heron_detected") or detection.get("other_animal_detected")):
             kept += 1
             continue
         f.unlink()
         deleted += 1
-    logger.info("Cleanup: %d alte Dateien gelöscht, %d Fischreiher-Dateien behalten", deleted, kept)
+    logger.info("Cleanup: %d alte Dateien gelöscht, %d Tier-Dateien behalten", deleted, kept)
 
 
 async def cleanup_task():
