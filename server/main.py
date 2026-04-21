@@ -93,7 +93,9 @@ def detect_heron(image_path: Path) -> dict:
 
     probs = outputs.logits_per_image.softmax(dim=1)
     heron_max_per_crop = probs[:, HERON_IDX].max(dim=1).values
-    heron_score = float(heron_max_per_crop.max().item())
+    top2 = torch.topk(heron_max_per_crop, k=2).values
+    heron_score = float(top2[0].item())
+    heron_support_score = float(top2[1].item())
 
     other_probs = probs[:, OTHER_IDX]
     other_max_per_crop, other_argmax_per_crop = other_probs.max(dim=1)
@@ -101,12 +103,13 @@ def detect_heron(image_path: Path) -> dict:
     other_score = float(other_max_per_crop[best_crop].item())
     other_label = OTHER_ANIMAL_LABELS[int(other_argmax_per_crop[best_crop].item())]
 
-    heron_detected = heron_score >= DETECTION_THRESHOLD
+    heron_detected = heron_support_score >= DETECTION_THRESHOLD
     other_detected = (not heron_detected) and other_score >= OTHER_THRESHOLD
 
     result = {
         "heron_detected": heron_detected,
         "heron_score": round(heron_score, 3),
+        "heron_support_score": round(heron_support_score, 3),
         "other_animal_detected": other_detected,
         "other_animal_score": round(other_score, 3),
         "other_animal_label": other_label,
@@ -138,8 +141,8 @@ async def detection_task():
                 else:
                     status = "kein Tier"
                 logger.info(
-                    "Analyse %s: %s (Reiher: %.3f, Sonstige: %.3f)",
-                    jpg.name, status, result["heron_score"], result["other_animal_score"],
+                    "Analyse %s: %s (Reiher: %.3f/%.3f, Sonstige: %.3f)",
+                    jpg.name, status, result["heron_score"], result["heron_support_score"], result["other_animal_score"],
                 )
             except Exception:
                 logger.exception("Fehler bei Analyse von %s", jpg.name)
@@ -228,6 +231,22 @@ async def list_detections():
     return results
 
 
+@app.get("/other-detections")
+async def list_other_detections():
+    results = []
+    for f in sorted(IMAGES_DIR.glob("*.jpg"), reverse=True):
+        detection = read_sidecar(f)
+        if detection and detection.get("other_animal_detected"):
+            results.append({
+                "filename": f.name,
+                "size": f.stat().st_size,
+                "other_animal_score": detection.get("other_animal_score"),
+                "other_animal_label": detection.get("other_animal_label"),
+                "analyzed_at": detection.get("analyzed_at"),
+            })
+    return results
+
+
 @app.get("/hours")
 async def list_hours():
     files = sorted(IMAGES_DIR.glob("*.jpg"), reverse=True)
@@ -268,6 +287,11 @@ async def hour_page():
 @app.get("/heron.html")
 async def heron_page():
     return FileResponse("static/heron.html")
+
+
+@app.get("/sonstige.html")
+async def sonstige_page():
+    return FileResponse("static/sonstige.html")
 
 
 def cleanup_old_images():

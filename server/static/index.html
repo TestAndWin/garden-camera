@@ -44,6 +44,8 @@
         .hour-list a .hour-count { color: #666; margin-left: 0.4rem; }
         .heron-link { background: #e74c3c; color: #fff; border: none; border-radius: 6px; padding: 0.5rem 1rem; font-size: 0.9rem; cursor: pointer; text-decoration: none; font-weight: 600; }
         .heron-link:hover { background: #c0392b; }
+        .other-link { background: #f39c12; color: #fff; border: none; border-radius: 6px; padding: 0.5rem 1rem; font-size: 0.9rem; cursor: pointer; text-decoration: none; font-weight: 600; }
+        .other-link:hover { background: #d68910; }
     </style>
 </head>
 <body>
@@ -51,6 +53,7 @@
         <h1>Gartenkamera</h1>
         <div style="display: flex; gap: 1.5rem; align-items: center;">
             <a id="heron-link" class="heron-link" href="heron.html" style="display:none;">Fischreiher-Sichtungen</a>
+            <a id="other-link" class="other-link" href="sonstige.html" style="display:none;">Sonstige</a>
             <span id="battery"></span>
             <span id="count"></span>
         </div>
@@ -211,6 +214,18 @@
             } catch (e) {}
         }
 
+        async function checkOtherDetections() {
+            try {
+                const resp = await fetch('other-detections');
+                const detections = await resp.json();
+                const link = document.getElementById('other-link');
+                if (detections.length > 0) {
+                    link.style.display = '';
+                    link.textContent = 'Sonstige (' + detections.length + ')';
+                }
+            } catch (e) {}
+        }
+
         const batteryEl = document.getElementById('battery');
 
         async function loadStatus() {
@@ -226,6 +241,7 @@
         loadImages();
         loadHours();
         checkDetections();
+        checkOtherDetections();
         loadStatus();
         setInterval(loadStatus, 30000);
     </script>
